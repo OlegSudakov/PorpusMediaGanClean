@@ -14,13 +14,14 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 from dataset import HDF5Dataset
 from hdf5_io import save_hdf5
-import dcgan
+import conditional_dcgan_1 as dcgan
 import numpy as np
 np.random.seed(43)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, help='3D')
 parser.add_argument('--datapath', required=True, help='path to dataset')
+parser.add_argument('--labelpath', required=True, help='path to labels')
 parser.add_argument('--workdir', default="./")
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
@@ -60,7 +61,9 @@ if torch.cuda.is_available() and not opt.cuda:
 
 if opt.dataset in ['3D']:
     dataset = np.load(str(opt.datapath))
-
+    labels = np.load(str(opt.labelpath))
+    
+ncl = labels.shape[1]
 ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
@@ -78,21 +81,21 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 # custom iteration function for use with numpy array
-def iterate(X, batch_size):
-    np.random.shuffle(X)
-    for i in range(X.shape[0] // batch_size):
-        yield np.expand_dims(X[i*batch_size : (i+1)*batch_size,:,:,:], 1)
-    if (i+1)*batch_size < X.shape[0]:
-        yield np.expand_dims(X[(i+1)*batch_size:,:,:,:], 1)
+def iterate(inds_range, batch_size):
+    np.random.shuffle(inds_range)
+    for i in range(inds_range.shape[0] // batch_size):
+        yield inds_range[i*batch_size : (i+1)*batch_size]
+    if (i+1)*batch_size < inds_range.shape[0]:
+        yield inds_range[(i+1)*batch_size:]
 
-netG = dcgan.DCGAN3D_G(opt.imageSize, nz, nc, ngf, ngpu)
+netG = dcgan.DCGAN3D_G(opt.imageSize, nz, nc, ngf, ngpu, ncl)
 
 netG.apply(weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-netD = dcgan.DCGAN3D_D(opt.imageSize, nz, nc, ndf, ngpu)
+netD = dcgan.DCGAN3D_D(opt.imageSize, nz, nc, ndf, ngpu, ncl)
 netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
